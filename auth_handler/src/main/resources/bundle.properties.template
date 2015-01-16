@@ -1,0 +1,9 @@
+# Configure the created bundle
+import.packages=*
+export.packages=org.healthnow.web.authentication
+private.packages=org.healthnow.web.authentication.internal
+
+#DEV Authoring
+webdav.url=http://localhost:8282/sling
+webdav.user=USER_NAME_HERE
+webdav.password=PASSWORD_HERE
