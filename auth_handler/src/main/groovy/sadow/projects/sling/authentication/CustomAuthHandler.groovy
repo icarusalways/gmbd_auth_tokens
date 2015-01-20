@@ -1,9 +1,9 @@
 package sadow.projects.sling.authentication
 
 //jmx annotations and support
-import com.adobe.granite.jmx.annotation.AnnotatedStandardMBean
-import javax.management.DynamicMBean
-import javax.management.NotCompliantMBeanException
+//import com.adobe.granite.jmx.annotation.AnnotatedStandardMBean
+//import javax.management.DynamicMBean
+//import javax.management.NotCompliantMBeanException
 
 //utils
 import java.util.Enumeration
@@ -61,7 +61,11 @@ import org.slf4j.LoggerFactory
                 label="Paths", 
                 value="My property's initial value", 
                 description="One or more string values indicating the request URLs to which the AuthenticationHandler is applicable.", 
-                cardinality=100)
+                cardinality=100),
+    @Property ( name="request.url.suffix", 
+                label="Request URL Suffix", 
+                value="/j_security_check", 
+                description="A URL suffix that when requested executes this AuthenticationHandler login mechanism")
     //optional parameter
     /*@Property ( name="authtype", 
                 label="AuthType", 
@@ -75,8 +79,13 @@ import org.slf4j.LoggerFactory
 * If the service is registered with Scheme and Host/Port, these must exactly match for the service to be eligible.
 * If multiple AuthenticationHandler services are registered with the same length matching path, the handler with the higher service ranking is selected.
 */
-@Service (value=[ AuthenticationHandler.class, DynamicMBean.class ])
-public class CustomAuthHandler extends AnnotatedStandardMBean implements AuthenticationHandler {
+@Service (value=[ AuthenticationHandler.class])
+public class CustomAuthHandler implements AuthenticationHandler {
+
+    //request url suffix
+    //static final String REQUEST_URL_SUFFIX = "/sad_check";
+    //static final String REQUEST_URL_SUFFIX = "/j_security_check";
+    static String REQUEST_URL_SUFFIX = "/j_security_check"
 
     // Internal logger
     private static final Logger log = LoggerFactory.getLogger(CustomAuthHandler.class)
@@ -103,14 +112,8 @@ public class CustomAuthHandler extends AnnotatedStandardMBean implements Authent
 
     def path = []
 
-    /**
-     * Constructor
-     * 
-     * @throws NotCompliantMBeanException 
-     */
-    public CustomAuthHandler() throws NotCompliantMBeanException {
-        super(AuthenticationHandler.class)
-    }
+
+    public CustomAuthHandler() {}
 
     public String getRepositoryName(){
         String repositoryName = "Repository name unavailable."
@@ -125,6 +128,7 @@ public class CustomAuthHandler extends AnnotatedStandardMBean implements Authent
        this.componentContext = componentContext
        log.info("CustomAuthHandler - component activated")
        log.info("--------------------------------------")
+       configureComponent()
        printProperties()
     }
     
@@ -133,6 +137,7 @@ public class CustomAuthHandler extends AnnotatedStandardMBean implements Authent
         this.componentContext = componentContext
         log.info("CustomAuthHandler - component modified")
         log.info("-------------------------------------")
+        configureComponent()
         printProperties()
     }
     
@@ -159,6 +164,11 @@ public class CustomAuthHandler extends AnnotatedStandardMBean implements Authent
         } else {
             log.info("\n-----------No Properties----------\n")
         }
+    }
+
+    private void configureComponent(){
+        def properties = componentContext.getProperties()
+        this.REQUEST_URL_SUFFIX = (String)properties.get("request.url.suffix");
     }
 
     /**

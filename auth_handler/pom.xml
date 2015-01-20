@@ -4,7 +4,7 @@
     
     <groupId>sadow.projects</groupId>
     <artifactId>auth_handler</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.6</version>
     <packaging>bundle</packaging>
 
     <name>Custom Authentication Handler</name>
@@ -89,7 +89,7 @@
                 <artifactId>maven-sling-plugin</artifactId>
                 <configuration>
                     <bundleFileName>${project.build.directory}/${project.build.finalName}.jar</bundleFileName>
-                    <slingUrl>http://localhost:8282/sling/apps/COMMON/install</slingUrl>
+                    <slingUrl>http://localhost:8081/sling/apps/COMMON/install</slingUrl>
                     <user>admin</user>
                     <password>admin</password>
                 </configuration>
@@ -194,12 +194,12 @@
         </dependency>
         
         <!-- JMX -->
-        <dependency>
+        <!--dependency>
             <groupId>com.adobe.granite</groupId>
             <artifactId>com.adobe.granite.jmx</artifactId>
             <version>0.2.6</version>
             <scope>provided</scope>
-        </dependency>
+        </dependency-->
         
         <!-- JCR -->
         <dependency>

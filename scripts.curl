@@ -1,0 +1,11 @@
+curl -u admin:admin -F"sling:resourceType=sadow/projects/testers" -F"title=Tester" http://localhost:8081/sling/content/test
+
+curl -u admin:admin -F"sling:resourceType=sadow/auth" -F"title=Sadow Projects Authentication Form" http://localhost:8081/sling/content/sadowlogin
+
+#curl -X POST -u admin:admin http://localhost:8081/apps/sadow
+#curl -X POST -u admin:admin http://localhost:8081/apps/sadow/projects
+#curl -X POST -u admin:admin http://localhost:8081/apps/sadow/projects/authentication_form
+
+#curl -u admin:admin -T sadow_login.gsp http://localhost:8081/apps/sadow/projects/GET.gsp
+
+curl -u admin:admin -F:name=msadow -Fpwd=password -FpwdConfirm=password -Ffirstname=Matthew -Flastname=Sadowski http://localhost:8081/sling/system/userManager/user.create.json
