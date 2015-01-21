@@ -28,6 +28,8 @@ import javax.servlet.http.*
 
 //interface for implementation and other useful classes
 import org.apache.sling.auth.core.spi.*
+import org.apache.sling.auth.core.*;
+import org.osgi.framework.Constants;
 
 //components
 import org.osgi.service.component.ComponentContext
@@ -65,7 +67,11 @@ import org.slf4j.LoggerFactory
     @Property ( name="request.url.suffix", 
                 label="Request URL Suffix", 
                 value="/j_security_check", 
-                description="A URL suffix that when requested executes this AuthenticationHandler login mechanism")
+                description="A URL suffix that when requested executes this AuthenticationHandler login mechanism"),
+    @Property( 
+                name = Constants.SERVICE_RANKING,
+                intValue = 20,
+                propertyPrivate = false)
     //optional parameter
     /*@Property ( name="authtype", 
                 label="AuthType", 
@@ -80,12 +86,12 @@ import org.slf4j.LoggerFactory
 * If multiple AuthenticationHandler services are registered with the same length matching path, the handler with the higher service ranking is selected.
 */
 @Service (value=[ AuthenticationHandler.class])
-public class CustomAuthHandler implements AuthenticationHandler {
+public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler implements AuthenticationHandler {
 
     //request url suffix
     //static final String REQUEST_URL_SUFFIX = "/sad_check";
-    //static final String REQUEST_URL_SUFFIX = "/j_security_check";
-    static String REQUEST_URL_SUFFIX = "/j_security_check"
+    static final String REQUEST_URL_SUFFIX = "/j_security_check";
+    //static String REQUEST_URL_SUFFIX = "/j_security_check"
 
     // Internal logger
     private static final Logger log = LoggerFactory.getLogger(CustomAuthHandler.class)
@@ -182,7 +188,35 @@ public class CustomAuthHandler implements AuthenticationHandler {
     * Extracts credential data from the request if at all contained.
     */
     public AuthenticationInfo extractCredentials(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response){
-        log.info("CustomAuthHandler extractCredentials");
+
+        log.info("CustomAuthHandler extractCredentials")
+
+        AuthenticationInfo info = null
+
+        // 1. try credentials from POST'ed request parameters
+        info = this.extractRequestParameterAuthentication(request);
+
+        // 2. try credentials from the cookie or session
+        if (info == null) {
+            String authData = authStorage.extractAuthenticationInfo(request);
+            if (authData != null) {
+                if (tokenStore.isValid(authData)) {
+                    info = createAuthInfo(authData);
+                } else {
+                    // clear the cookie, its invalid and we should get rid of it
+                    // so that the invalid cookie isn't present on the authN
+                    // operation.
+                    authStorage.clear(request, response);
+                    if (this.loginAfterExpire || AuthUtil.isValidateRequest(request)) {
+                        // signal the requestCredentials method a previous login
+                        // failure
+                        request.setAttribute(FAILURE_REASON, FormReason.TIMEOUT);
+                        info = AuthenticationInfo.FAIL_AUTH;
+                    }
+                }
+            }
+        }
+
         //AuthenticationInfo.DOING_AUTH
         //A special instance of this class which may be returned to inform the caller that a response has been sent to the client to request for credentials.
         //AuthenticationInfo.FAIL_AUTH
@@ -196,5 +230,35 @@ public class CustomAuthHandler implements AuthenticationHandler {
     public boolean requestCredentials(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response){
         log.info("CustomAuthHandler requestCredentials");
         return false;
+    }
+
+    private AuthenticationInfo extractRequestParameterAuthentication(HttpServletRequest request) {
+        
+        AuthenticationInfo info = null;
+
+        // only consider login form parameters if this is a POST request
+        // to the j_security_check URL
+        if ("POST" == request.getMethod() && request.getRequestURI().endsWith(REQUEST_URL_SUFFIX)) {
+
+            String user = request.getParameter("j_username");
+            String pwd = request.getParameter("j_password");
+
+            if (user != null && pwd != null) {
+                info = new AuthenticationInfo(HttpServletRequest.FORM_AUTH, user, pwd.toCharArray());
+                info.put(AuthConstants.AUTH_INFO_LOGIN, new Object());
+
+                // if this request is providing form credentials, we have to
+                // make sure, that the request is redirected after successful
+                // authentication, otherwise the request may be processed
+                // as a POST request to the j_security_check page (unless
+                // the j_validate parameter is set); but only if this is not
+                // a validation request
+                if (!AuthUtil.isValidateRequest(request)) {
+                    AuthUtil.setLoginResourceAttribute(request, request.getContextPath());
+                }
+            }
+        }
+
+        return info;
     }
 }
