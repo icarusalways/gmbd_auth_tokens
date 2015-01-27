@@ -1,3 +1,5 @@
+package sadow.projects.sling.authentication
+
 //loggers
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -20,16 +22,25 @@ public class MongoTokenStore {
 
 	def createToken(username){
 
-		def cookieValue = UUID.randomUUID()
+		def cookieValue = UUID.randomUUID().toString()
 
 		def new_expiration_date = new Date(new Date().getTime() + sessionTimeout)
 		/*def new_expiration_date
 		use([groovy.time.TimeCategory]){
 			new_expiration_date = new Date() + 2.minutes
 		}*/
-		println("${new_expiration_date}")
+
+		MongoClient mongoClient = new MongoClient( "localhost" , 27017 );
+		
+		DB db = mongoClient.getDB("test")
+
+		DBCollection auth_tokens = db.getCollection("authentication_tokens");
+
+		log.info("${new_expiration_date}")
 		def verify = auth_tokens.save(new BasicDBObject(["username":username, "cookie":cookieValue, "expiration_date" : new_expiration_date]))
-		println("created a new token? ${verify}")
+		log.info("created a new token? ${verify}")
+
+		mongoClient.close();
 
 		return cookieValue
 	}
@@ -43,6 +54,8 @@ public class MongoTokenStore {
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
 		def auth_data = auth_tokens.findOne(new BasicDBObject(["token":value]));
+
+		mongoClient.close();
 
 		return auth_data
 
@@ -79,10 +92,13 @@ public class MongoTokenStore {
 				isValid = false;
 
 			} else {
-				println("${username} is still logged in");
+				log.info("${username} is still logged in");
 				isValid = true;
 			}
 		}
+
+		mongoClient.close();
+
 		return isValid;
 	}
 
@@ -99,5 +115,7 @@ public class MongoTokenStore {
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
 		auth_tokens.remove(new BasicDBObject(["cookie":value]))
+
+		mongoClient.close();
 	}
 }

@@ -63,13 +63,17 @@ import com.mongodb.*
     //necessary for Authentication Handler implementation
     @Property ( name="path", 
                 label="Paths", 
-                value="My property's initial value", 
+                value="/", 
                 description="One or more string values indicating the request URLs to which the AuthenticationHandler is applicable.", 
                 cardinality=100),
     @Property ( name="request.cookie.name", 
                 label="Name of the cookie to set and check", 
                 value="login-token", 
                 description="Name of the cookie to set and check"),
+    @Property ( name="session.timeout", 
+                label="Time in milliseconds until the cookie expires", 
+                longValue=60000L, 
+                description="Time in milliseconds until the cookie expires"),
     /*@Property ( name="request.url.suffix", 
                 label="Request URL Suffix", 
                 value="/j_security_check", 
@@ -124,6 +128,8 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     def path = []
 
     def cookieName
+
+    def sessionTimeout
 
 
     public CustomAuthHandler() {}
@@ -183,6 +189,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         def properties = componentContext.getProperties()
         //this.REQUEST_URL_SUFFIX = (String)properties.get("request.url.suffix")
         this.cookieName = (String)properties.get("request.cookie.name")
+        this.sessionTimeout = (long)properties.get("session.timeout")
     }
 
     /**
@@ -312,16 +319,40 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     public void authenticationFailed(HttpServletRequest request,
             HttpServletResponse response, AuthenticationInfo authInfo) {
 
+        log.info("Invalid credentials provided. Deleting old cookie from request.");
         /*
          * Note: This method is called if this handler provided credentials
          * which cause a login failure
          */
 
         // clear authentication data from Cookie or Http Session
-        authStorage.clear(request, response);
+        // delete cookie if present
+        Cookie oldCookie = null;
+        String oldCookieDomain = null;
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("login-token" == cookie.getName()) {
+                    // found the cookie
+                    oldCookie = cookie;
+                /*} else if (this.domainCookieName.equals(cookie.getName())) {
+                    oldCookieDomain = cookie.getValue();
+                }*/
+                }
+            }
+        }
+
+        // remove the old cookie from the client
+        if (oldCookie != null) {
+            setCookie(request, response, "login-token", "", 0, null);
+            /*if (oldCookieDomain != null && oldCookieDomain.length() > 0) {
+                setCookie(request, response, this.domainCookieName, "", 0, oldCookieDomain);
+            }*/
+        }
+        //authStorage.clear(request, response);
 
         // signal the reason for login failure
-        request.setAttribute(FAILURE_REASON, FormReason.INVALID_CREDENTIALS);
+        request.setAttribute(FAILURE_REASON, "Username and Password do not match");
     }
 
     /**
@@ -347,31 +378,20 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
          * which succeeded login into the repository
          */
 
-        // ensure fresh authentication data
+        // get current authentication data, may be missing after first login
+        //String authData = getCookieAuthData(authInfo);
+        String authData = authInfo.get("cookie");
+        if(authData == null){
+            MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
+            def cookieValue = mts.createToken(authInfo.getUser())
+            setCookie(request, response, "login-token", cookieValue, 5, null)
+        }
+
+        // ensure fresh authentication data (refresh if over half of the session time elapsed)
         //refreshAuthData(request, response, authInfo);
-        final StringBuilder header = new StringBuilder();
 
-        // default setup with name, value, cookie path and HttpOnly
-        header.append(name).append("=").append(value);
-        header.append("; Path=").append(cookiePath);
-        header.append("; HttpOnly"); // don't allow JS access
-
-        // set the cookie domain if so configured
-        if (domain != null) {
-            header.append("; Domain=").append(domain);
-        }
-
-        // Only set the Max-Age attribute to remove the cookie
-        if (age >= 0) {
-            header.append("; Max-Age=").append(age);
-        }
-
-        // ensure the cookie is secured if this is an https request
-        if (request.isSecure()) {
-            header.append("; Secure");
-        }
-
-        response.addHeader(HEADER_SET_COOKIE, header.toString());
+        //set the cookie
+        //setCookie(request, response, "login-token", , 5, null)
 
         final boolean result;
         // SLING-1847: only consider a resource redirect if this is a POST request
@@ -418,6 +438,45 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
 
         // no redirect
         return result;
+    }
+
+    private void setCookie(final HttpServletRequest request, final HttpServletResponse response, 
+                            final String name, final String value, final int age, final String domain) {
+
+        final String ctxPath = request.getContextPath();
+        final String cookiePath = (ctxPath == null || ctxPath.length() == 0) ? "/": ctxPath;
+
+        /*
+         * The Servlet Spec 2.5 does not allow us to set the commonly used
+         * HttpOnly attribute on cookies (Servlet API 3.0 does) so we create
+         * the Set-Cookie header manually. See
+         * http://www.owasp.org/index.php/HttpOnly for information on what
+         * the HttpOnly attribute is used for.
+         */
+
+        final StringBuilder header = new StringBuilder();
+
+        // default setup with name, value, cookie path and HttpOnly
+        header.append(name).append("=").append(value);
+        header.append("; Path=").append(cookiePath);
+        header.append("; HttpOnly"); // don't allow JS access
+
+        // set the cookie domain if so configured
+        if (domain != null) {
+            header.append("; Domain=").append(domain);
+        }
+
+        // Only set the Max-Age attribute to remove the cookie
+        if (age >= 0) {
+            header.append("; Max-Age=").append(age);
+        }
+
+        // ensure the cookie is secured if this is an https request
+        if (request.isSecure()) {
+            header.append("; Secure");
+        }
+
+        response.addHeader("Set-Cookie", header.toString());
     }
 
         /**
