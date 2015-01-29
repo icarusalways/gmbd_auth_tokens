@@ -40,6 +40,20 @@ import org.slf4j.LoggerFactory
 
 import com.mongodb.*
 
+import javax.jcr.Credentials;
+import javax.jcr.SimpleCredentials;
+
+import org.apache.sling.api.resource.LoginException;
+import org.apache.sling.api.resource.Resource;
+import org.apache.sling.api.resource.ResourceResolver;
+import org.apache.sling.api.resource.ResourceResolverFactory;
+import javax.servlet.Servlet;
+import javax.servlet.ServletException;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession
+
 /**
  * This class demonstrates the following:
  *  - Maven scr plugin annotations
@@ -131,6 +145,12 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
 
     def sessionTimeout
 
+    def loginModule
+
+    def loginForm = "/sling/content/sadowlogin.html"
+
+    def includeLoginForm = false
+
 
     public CustomAuthHandler() {}
 
@@ -165,6 +185,10 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         this.componentContext = componentContext
         log.info("CustomAuthHandler - component deactivated")
         log.info("----------------------------------------")
+        if (loginModule != null) {
+            loginModule.unregister();
+            loginModule = null;
+        }
     }
     
     private void printProperties() {
@@ -186,10 +210,19 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     }
 
     private void configureComponent(){
+
         def properties = componentContext.getProperties()
         //this.REQUEST_URL_SUFFIX = (String)properties.get("request.url.suffix")
         this.cookieName = (String)properties.get("request.cookie.name")
         this.sessionTimeout = (long)properties.get("session.timeout")
+
+        //ServiceRegistration
+        try{
+            this.loginModule = CustomAuthLoginModulePlugin.register(this, componentContext.getBundleContext());
+        } catch (Throwable t){
+            log.error("Cannot register CustomAuthLoginModulePlugin. This is expected if Sling LoginModulePlugin services are not supported. This is necessary for Authentication with storing passwords.");
+            log.error("dump", t);
+        }
     }
 
     /**
@@ -217,20 +250,36 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             //get the cookie
             def cookie = getCookie(request)
 
+            log.info("Found cookie ${cookie}")
+
             if (cookie != null) {
+                log.info("checking cookie store for validity of ${cookie}")
                 MongoTokenStore tokenStore = new MongoTokenStore(sessionTimeout)
                 if (tokenStore.isValid(cookie)) {
                     def authData = tokenStore.getAuthData(cookie)
                     def username = authData.get("username")
+                    //def password = authData.get("password").toCharArray()//toArray().collect{it -> (Character)it}
+                    //log.info("${password}")
+                    //log.info("Found username ${username}:${password} associated with cookie")
 
-                    info = new AuthenticationInfo(HttpServletRequest.FORM_AUTH, userId)
-                    info.put("cookie", cookie)
+                    //need to send back the password everytime unless we implement a LoginModulePlugin
+                    //info = new AuthenticationInfo(HttpServletRequest.FORM_AUTH, username, password)
+                    info = new AuthenticationInfo(HttpServletRequest.FORM_AUTH, username)
+
+                    info.put("login-token", cookie)
 
                 } else {
+                    log.info("cookie is invalid. Attempting to clear the cookie");
                     // clear the cookie, its invalid and we should get rid of it
                     // so that the invalid cookie isn't present on the authN
                     // operation.
-                    tokenStore.clearCookie(request, response);
+
+                    //remove cookie from datastore 
+                    //this could be done on the check for isValid
+                    tokenStore.clearCookie(cookie);
+
+                    //remove the cookie from the clients browser
+                    setCookie(request, response, "login-token", "", 0, null);
 
                     //if (this.loginAfterExpire || AuthUtil.isValidateRequest(request)) {
                         // signal the requestCredentials method a previous login
@@ -242,6 +291,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             }
         }
 
+        log.info("return AuthenticationInfo object : ${info}")
         //AuthenticationInfo.DOING_AUTH
         //A special instance of this class which may be returned to inform the caller that a response has been sent to the client to request for credentials.
         //AuthenticationInfo.FAIL_AUTH
@@ -256,7 +306,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if (this.cookieName.equals(cookie.getName())) {
+                if ("login-token" == cookie.getName()) {
                     String value = cookie.getValue();
                     if (value.length() > 0) {
                         cookieValue = value
@@ -273,9 +323,64 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     /**
     * Requests authentication information from the client.
     */
-    public boolean requestCredentials(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response){
-        log.info("CustomAuthHandler requestCredentials");
-        return false;
+    public boolean requestCredentials(HttpServletRequest request, HttpServletResponse response) throws IOException {
+
+        // 0. ignore this handler if an authentication handler is requested
+        final String requestLogin = request.getParameter(REQUEST_LOGIN_PARAMETER);
+        if(requestLogin != null && !HttpServletRequest.FORM_AUTH.equals(requestLogin)){
+            // consider this handler is not used
+            return false;
+        }
+
+        //check the referrer to see if the request is for this handler
+        if (!AuthUtil.checkReferer(request, loginForm)) {
+            //not for this handler, so return
+            return false;
+        }
+
+        final String resource = AuthUtil.setLoginResourceAttribute(request, request.getRequestURI());
+
+        if (includeLoginForm && (resourceResolverFactory != null)) {
+            ResourceResolver resourceResolver = null;
+            try {
+                resourceResolver = resourceResolverFactory.getAdministrativeResourceResolver(null);
+                Resource loginFormResource = resourceResolver.resolve(loginForm);
+                Servlet loginFormServlet = loginFormResource.adaptTo(Servlet.class);
+                if (loginFormServlet != null) {
+                    try {
+                        loginFormServlet.service(request, response);
+                        return true;
+                    } catch (ServletException e) {
+                        log.error("Failed to include the form: " + loginForm, e);
+                    }
+                }
+            } catch (LoginException e) {
+                log.error("Unable to get a resource resolver to include for the login resource. Will redirect instead.");
+            } finally {
+                if (resourceResolver != null) {
+                    resourceResolver.close();
+                }
+            }
+        }
+
+        HashMap<String, String> params = new HashMap<String, String>();
+        params.put(Authenticator.LOGIN_RESOURCE, resource);
+
+        // append indication of previous login failure
+        if (request.getAttribute(FAILURE_REASON) != null) {
+            final Object jReason = request.getAttribute(FAILURE_REASON);
+            @SuppressWarnings("rawtypes")
+            final String reason = (jReason instanceof Enum) ? ((Enum) jReason).name() : jReason.toString();
+            params.put(FAILURE_REASON, reason);
+        }
+
+        try {
+            AuthUtil.sendRedirect(request, response, loginForm, params);
+        } catch (IOException e) {
+            log.error("Failed to redirect to the login form " + loginForm, e);
+        }
+
+        return true;
     }
 
     private AuthenticationInfo extractRequestParameterAuthentication(HttpServletRequest request) {
@@ -380,10 +485,10 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
 
         // get current authentication data, may be missing after first login
         //String authData = getCookieAuthData(authInfo);
-        String authData = authInfo.get("cookie");
+        String authData = authInfo.get("login-token");
         if(authData == null){
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
-            def cookieValue = mts.createToken(authInfo.getUser())
+            def cookieValue = mts.createToken(authInfo.getUser(), authInfo.getPassword())
             setCookie(request, response, "login-token", cookieValue, 5, null)
         }
 
@@ -467,9 +572,9 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         }
 
         // Only set the Max-Age attribute to remove the cookie
-        if (age >= 0) {
+        /*if (age >= 0) {
             header.append("; Max-Age=").append(age);
-        }
+        }*/
 
         // ensure the cookie is secured if this is an https request
         if (request.isSecure()) {
@@ -525,4 +630,41 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             }
         }
     }*/
+
+    // ---------- LoginModulePlugin support
+
+    private String getCookieAuthData(final Credentials credentials) {
+        if (credentials instanceof SimpleCredentials) {
+            Object data = ((SimpleCredentials) credentials).getAttribute("login-token");
+            if (data instanceof String) {
+                return (String) data;
+            }
+        }
+        // no SimpleCredentials or no valid attribute
+        return null;
+    }
+
+    public boolean hasAuthData(final Credentials credentials) {
+        return getCookieAuthData(credentials) != null;
+    }
+
+    public boolean isValid(final Credentials credentials) {
+        
+        log.info("LoginModule Plugin checking if credentials are valid")
+
+        String authData = getCookieAuthData(credentials);
+
+        if (authData != null) {
+            
+            MongoTokenStore tokenStore = new MongoTokenStore(sessionTimeout)
+
+            return tokenStore.isValid(authData)
+
+        }
+
+        // no authdata, not valid
+        return false;
+    }
+
+    // END ------ LoginModulePlugin support
 }

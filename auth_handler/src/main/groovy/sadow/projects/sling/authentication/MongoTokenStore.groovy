@@ -20,7 +20,7 @@ public class MongoTokenStore {
 		this.sessionTimeout = sessionTimeout
 	}
 
-	def createToken(username){
+	def createToken(username, password){
 
 		def cookieValue = UUID.randomUUID().toString()
 
@@ -37,7 +37,7 @@ public class MongoTokenStore {
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
 		log.info("${new_expiration_date}")
-		def verify = auth_tokens.save(new BasicDBObject(["username":username, "cookie":cookieValue, "expiration_date" : new_expiration_date]))
+		def verify = auth_tokens.save(new BasicDBObject(["username":username, "password" : password.toString(), "cookie":cookieValue, "expiration_date" : new_expiration_date]))
 		log.info("created a new token? ${verify}")
 
 		mongoClient.close();
@@ -53,7 +53,7 @@ public class MongoTokenStore {
 
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
-		def auth_data = auth_tokens.findOne(new BasicDBObject(["token":value]));
+		def auth_data = auth_tokens.findOne(new BasicDBObject(["cookie":value]));
 
 		mongoClient.close();
 
@@ -63,9 +63,12 @@ public class MongoTokenStore {
 
 	boolean isValid(String value){
 
+		log.info("checking if ${value} is a valid cookie")
+
 		boolean isValid = false;
 		
 		if(!value){
+			log.info("cookie value is not valid (${value})")
 			return isValid
 		}
 
@@ -75,7 +78,7 @@ public class MongoTokenStore {
 
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
-		def auth_token = auth_tokens.findOne(new BasicDBObject(["token":value]));
+		def auth_token = auth_tokens.findOne(new BasicDBObject(["cookie":value]));
 
 		if(auth_token){
 
@@ -92,17 +95,23 @@ public class MongoTokenStore {
 				isValid = false;
 
 			} else {
-				log.info("${username} is still logged in");
+				log.info("${auth_token.get('username')} is still logged in with token ");
 				isValid = true;
 			}
+		} else {
+			log.info("no cookie found in mongo datastore")
 		}
 
 		mongoClient.close();
+
+		log.info("returning isValid ${isValid}")
 
 		return isValid;
 	}
 
 	void clearCookie(String value){
+
+		log.info("clearing cookie ${value}")
 
 		if(value == null || value.equals("")){
 			return;
@@ -114,7 +123,9 @@ public class MongoTokenStore {
 
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
-		auth_tokens.remove(new BasicDBObject(["cookie":value]))
+		def result = auth_tokens.remove(new BasicDBObject(["cookie":value]))
+
+		log.info("result of clear cookie operation : ${result}")
 
 		mongoClient.close();
 	}
