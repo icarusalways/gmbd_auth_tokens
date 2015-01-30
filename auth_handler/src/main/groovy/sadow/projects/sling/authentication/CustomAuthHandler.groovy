@@ -491,9 +491,9 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         String authData = authInfo.get("login-token");
         if(authData == null){
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
-            def cookieValue = mts.createToken(authInfo.getUser(), authInfo.getPassword())
+            def cookieValue = mts.createToken(authInfo.getUser())
             setCookie(request, response, "login-token", cookieValue, 5, null)
-        }
+        }   
 
         // ensure fresh authentication data (refresh if over half of the session time elapsed)
         //refreshAuthData(request, response, authInfo);

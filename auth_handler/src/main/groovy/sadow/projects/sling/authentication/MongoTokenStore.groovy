@@ -20,7 +20,7 @@ public class MongoTokenStore {
 		this.sessionTimeout = sessionTimeout
 	}
 
-	def createToken(username, password){
+	def createToken(username){
 
 		def cookieValue = UUID.randomUUID().toString()
 
@@ -37,7 +37,7 @@ public class MongoTokenStore {
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
 		log.info("${new_expiration_date}")
-		def verify = auth_tokens.save(new BasicDBObject(["username":username, "password" : password.toString(), "cookie":cookieValue, "expiration_date" : new_expiration_date]))
+		def verify = auth_tokens.save(new BasicDBObject(["username":username, "cookie":cookieValue, "expiration_date" : new_expiration_date]))
 		log.info("created a new token? ${verify}")
 
 		mongoClient.close();
