@@ -98,14 +98,14 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
     public boolean canHandle(Credentials credentials) {
         
         boolean retval = false;
-
+        log.info("Checking if this login module can handle the credentials")
         try{
             retval = authHandler.hasAuthData(credentials);
-        } catch (Throwable e ){
+        } catch (Exception e ){
             log.error("Exception in LoginModule canHandle method ",e)
             retval = false   
         }
-
+        log.info("canHandle creds ${retval}")
         return retval;
         /*if (credentials instanceof SimpleCredentials) {
             if(credentials.getAttribute("login-token") != null && credentials.getAttribute("login-token") instanceof String){

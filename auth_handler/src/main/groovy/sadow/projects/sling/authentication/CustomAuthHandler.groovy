@@ -290,6 +290,8 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                     //}
                 }
             }
+        } else {
+            log.info("Authentication info was not null. Must be a login request.")
         }
 
         log.info("return AuthenticationInfo object : ${info}")

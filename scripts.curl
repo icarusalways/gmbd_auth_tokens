@@ -22,6 +22,7 @@ curl -v -X DELETE -u admin:admin http://localhost:8282/sling/apps/sadow/auth/htm
 
 #curl -u admin:admin -T sadow_login.gsp http://localhost:8081/apps/sadow/projects/GET.gsp
 
+#create user
 curl -u admin:admin -F:name=msadow -Fpwd=password -FpwdConfirm=password -Ffirstname=Matthew -Flastname=Sadowski http://localhost:8081/sling/system/userManager/user.create.json
 
 #default sling form authentication
