@@ -43,6 +43,7 @@ import com.mongodb.*
 import javax.jcr.Credentials;
 import javax.jcr.SimpleCredentials;
 
+import org.apache.sling.api.auth.Authenticator;
 import org.apache.sling.api.resource.LoginException;
 import org.apache.sling.api.resource.Resource;
 import org.apache.sling.api.resource.ResourceResolver;

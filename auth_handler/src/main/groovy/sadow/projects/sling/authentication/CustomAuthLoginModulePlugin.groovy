@@ -96,8 +96,18 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
      * @see CookieAuthenticationHandler#hasAuthData(Credentials)
      */
     public boolean canHandle(Credentials credentials) {
+        
         boolean retval = false;
-        if (credentials instanceof SimpleCredentials) {
+
+        try{
+            retval = authHandler.hasAuthData(credentials);
+        } catch (Throwable e ){
+            log.error("Exception in LoginModule canHandle method ",e)
+            retval = false   
+        }
+
+        return retval;
+        /*if (credentials instanceof SimpleCredentials) {
             if(credentials.getAttribute("login-token") != null && credentials.getAttribute("login-token") instanceof String){
                 return true;
             } else {
@@ -105,8 +115,7 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
             }
         } else {
             return false;
-        }
-        //return authHandler.hasAuthData(credentials);
+        }*/
     }
 
     /**
