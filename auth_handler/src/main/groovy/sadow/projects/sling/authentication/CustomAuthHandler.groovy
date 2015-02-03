@@ -21,8 +21,12 @@ import org.apache.felix.scr.annotations.ReferenceCardinality
 import org.apache.felix.scr.annotations.ReferencePolicy
 import org.apache.felix.scr.annotations.Service
 
+//imports to support finding an recording a user profile
 //apache sling reference
 import org.apache.sling.jcr.api.SlingRepository
+//crypto support for unencrypting profile information
+import com.adobe.granite.crypto.CryptoException;
+import com.adobe.granite.crypto.CryptoSupport;
 
 import javax.servlet.http.*
 
@@ -490,6 +494,54 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         //String authData = getCookieAuthData(authInfo);
         String authData = authInfo.get("login-token");
         if(authData == null){
+            //TODO : log into the jcr to get the profile of the user
+            //this will be used later if the user is switched to a new
+            //server without the profile loaded.
+            def profile = [:]
+            def groups = []
+
+            if(repository != null){
+
+                //login to the default workspace as the administrator
+                def jcr_session = repository.loginAdministrative(null)
+                try{
+                    def user_manager = jcr_session.getUserManager()
+                    def user = user_manager.getAuthorizable(authInfo.getUser())
+
+                    def names = user.getPropertyNames("profile")
+                    while(names.hasNext()){
+                        
+                        def name = names.next()
+                        def valueArray = user.getProperty("profile/"+name)
+
+                        if(valueArray?.length == 1){
+                            if(crypto.isProtected(valueArray[0]?.getString())){
+                                profile[name] = crypto.unprotect(valueArray[0]?.getString())
+                                //println(name + " : "+crypto.unprotect(user.getProperty("profile/"+name)[0].getString()))
+                            } else {
+                                profile[name] = valueArray[0]?.getString()
+                                println(name + " : "+user.getProperty("profile/"+name)[0].getString())
+                            }
+                        } else if(valueArray?.length > 0){
+                            //create an array of values
+                        }
+
+                    }
+
+                    def user_groups = user.declaredMemberOf()
+
+                    while(groups.hasNext()){
+                        groups << groups.next().getID())
+                    }
+
+                } catch(Exception e){
+                    log.error("Unable to query jcr for user ${authInfo.getUser()} ")
+                } finally{
+                    //must logout of the session
+                    jcr_session.logout();    
+                }
+            }
+
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
             def cookieValue = mts.createToken(authInfo.getUser())
             setCookie(request, response, "login-token", cookieValue, 5, null)

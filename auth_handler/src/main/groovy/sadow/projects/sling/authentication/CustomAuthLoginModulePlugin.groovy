@@ -93,6 +93,11 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
      * <code>SimplerCredentials</code> object and has an authentication data
      * attribute.
      *
+     * This method is extremely important to handle errors properly and return 
+     * true or false. Else this login module will handle all requests including
+     * those to the admin console. It's very hard to remove the module once it is 
+     * in place in such a state.
+     *
      * @see CookieAuthenticationHandler#hasAuthData(Credentials)
      */
     public boolean canHandle(Credentials credentials) {
