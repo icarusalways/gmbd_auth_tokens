@@ -25,6 +25,9 @@ curl -v -X DELETE -u admin:admin http://localhost:8282/sling/apps/sadow/auth/htm
 #create user
 curl -u admin:admin -F:name=msadow -Fpwd=password -FpwdConfirm=password -Ffirstname=Matthew -Flastname=Sadowski http://localhost:8081/sling/system/userManager/user.create.json
 
+#delete user
+curl -X POST -u admin:admin http://localhost:8181/sling/system/userManager/user/msadow.delete.json
+
 #default sling form authentication
 curl -v -X POST -d j_username=msadow -d j_password=password http://localhost:8282/sling/j_security_check
 

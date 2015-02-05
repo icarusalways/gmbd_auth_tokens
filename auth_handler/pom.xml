@@ -4,7 +4,7 @@
     
     <groupId>sadow.projects</groupId>
     <artifactId>auth_handler</artifactId>
-    <version>1.0.44</version>
+    <version>1.0.53</version>
     <packaging>bundle</packaging>
 
     <name>Custom Authentication Handler</name>
@@ -90,8 +90,10 @@
                 <configuration>
                     <bundleFileName>${project.build.directory}/${project.build.finalName}.jar</bundleFileName>
                     <!--slingUrl>http://localhost:8081/sling/apps/COMMON/install</slingUrl-->
-                    <!--slingUrl>http://localhost:8282/sling/apps/COMMON/install</slingUrl-->
-                    <slingUrl>http://localhost:8181/sling/apps/COMMON/install</slingUrl>
+                    <!--HN TC1-->
+                    <slingUrl>http://localhost:8282/sling/apps/COMMON/install</slingUrl>
+                    <!--HN TC2-->
+                    <!--slingUrl>http://localhost:8181/sling/apps/COMMON/install</slingUrl-->
                     <user>admin</user>
                     <password>admin</password>
                 </configuration>
@@ -281,7 +283,19 @@
             <version>2.2.0</version>
         </dependency>
 
+        <!--dependency>
+            <groupId>com.adobe.granite</groupId>
+            <artifactId>com.adobe.granite.crypto</artifactId>
+            <version>0.0.12</version>
+            <scope>provided</scope>
+        </dependency-->
 
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>jackrabbit-api</artifactId>
+            <version>2.3.0</version>
+            <scope>provided</scope>
+        </dependency>
 
     </dependencies>
 

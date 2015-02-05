@@ -25,8 +25,9 @@ import org.apache.felix.scr.annotations.Service
 //apache sling reference
 import org.apache.sling.jcr.api.SlingRepository
 //crypto support for unencrypting profile information
-import com.adobe.granite.crypto.CryptoException;
-import com.adobe.granite.crypto.CryptoSupport;
+//adobe and cq5 specific
+//import com.adobe.granite.crypto.CryptoException;
+//import com.adobe.granite.crypto.CryptoSupport;
 
 import javax.servlet.http.*
 
@@ -93,6 +94,10 @@ import javax.servlet.http.HttpSession
                 label="Time in milliseconds until the cookie expires", 
                 longValue=60000L, 
                 description="Time in milliseconds until the cookie expires"),
+    @Property ( name="server.name", 
+                label="Server Name", 
+                value="server1", 
+                description="Name of the server to differentiate which jvm and sling instance has already seen a user."),
     /*@Property ( name="request.url.suffix", 
                 label="Request URL Suffix", 
                 value="/j_security_check", 
@@ -140,9 +145,14 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     
     // Reference to the SlingRepository, injected. Remove if unnecessary.
     @Reference(
-            cardinality = ReferenceCardinality.MANDATORY_UNARY,
+            cardinality = ReferenceCardinality.OPTIONAL_UNARY,
             policy = ReferencePolicy.DYNAMIC)
     private volatile SlingRepository repository
+
+    /*@Reference(
+            cardinality = ReferenceCardinality.OPTIONAL_UNARY,
+            policy = ReferencePolicy.DYNAMIC)
+    private volatile CryptoSupport crypto*/
 
     def path = []
 
@@ -155,6 +165,8 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     def loginForm = "/sling/content/sadowlogin.html"
 
     def includeLoginForm = false
+
+    def serverName
 
 
     public CustomAuthHandler() {}
@@ -220,6 +232,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         //this.REQUEST_URL_SUFFIX = (String)properties.get("request.url.suffix")
         this.cookieName = (String)properties.get("request.cookie.name")
         this.sessionTimeout = (long)properties.get("session.timeout")
+        this.serverName = (String)properties.get("server.name")
 
         //ServiceRegistration
         try{
@@ -235,6 +248,8 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     */
     public void dropCredentials(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response){
         log.info("CustomAuthHandler drop credentials");
+        //remove the cookie from the clients browser
+        setCookie(request, response, "login-token", "", 0, null);
     }
 
     /**
@@ -263,6 +278,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                 if (tokenStore.isValid(cookie)) {
                     def authData = tokenStore.getAuthData(cookie)
                     def username = authData.get("username")
+                    def servers  = authData.get("servers")
                     //def password = authData.get("password").toCharArray()//toArray().collect{it -> (Character)it}
                     //log.info("${password}")
                     //log.info("Found username ${username}:${password} associated with cookie")
@@ -272,6 +288,9 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                     info = new AuthenticationInfo(HttpServletRequest.FORM_AUTH, username)
 
                     info.put("login-token", cookie)
+
+                    //to easily track which servers this user has already been seen on
+                    info.put("servers", servers)
 
                 } else {
                     log.info("cookie is invalid. Attempting to clear the cookie");
@@ -497,41 +516,79 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             //TODO : log into the jcr to get the profile of the user
             //this will be used later if the user is switched to a new
             //server without the profile loaded.
+
             def profile = [:]
-            def groups = []
+            def declaredMemberOf = []
+            def memberOf = []
 
             if(repository != null){
 
                 //login to the default workspace as the administrator
                 def jcr_session = repository.loginAdministrative(null)
                 try{
+
                     def user_manager = jcr_session.getUserManager()
                     def user = user_manager.getAuthorizable(authInfo.getUser())
 
-                    def names = user.getPropertyNames("profile")
-                    while(names.hasNext()){
+                    def user_property_names = user.getPropertyNames()
+                    while(user_property_names.hasNext()){
+                        def p_name = user_property_names.next()
+                        def val_array = user.getProperty(p_name)
+                        if(val_array.length > 1){
+                            def vals = []
+                            val_array.each{ val ->
+                                vals << val.getString()
+                            } 
+                            profile[p_name] = vals
+                        } else {
+                            profile[p_name] = val_array[0]?.getString()
+                        }
+                    }
+
+                    def profile_property_names = user.getPropertyNames("profile")
+
+                    while(profile_property_names.hasNext()){
                         
-                        def name = names.next()
+                        def name = profile_property_names.next()
                         def valueArray = user.getProperty("profile/"+name)
 
                         if(valueArray?.length == 1){
-                            if(crypto.isProtected(valueArray[0]?.getString())){
-                                profile[name] = crypto.unprotect(valueArray[0]?.getString())
-                                //println(name + " : "+crypto.unprotect(user.getProperty("profile/"+name)[0].getString()))
+                            
+                            profile["profile/"+name] = valueArray[0]?.getString()
+                            println(name + " : "+user.getProperty("profile/"+name)[0].getString())
+                            
+                            /*if(crypto){
+                                if(crypto.isProtected(valueArray[0]?.getString())){
+                                    profile[name] = crypto.unprotect(valueArray[0]?.getString())
+                                    //println(name + " : "+crypto.unprotect(user.getProperty("profile/"+name)[0].getString()))
+                                } else {
+                                    profile[name] = valueArray[0]?.getString()
+                                    println(name + " : "+user.getProperty("profile/"+name)[0].getString())
+                                }
                             } else {
-                                profile[name] = valueArray[0]?.getString()
-                                println(name + " : "+user.getProperty("profile/"+name)[0].getString())
-                            }
+                                //use the value directly?
+                            }*/
+
                         } else if(valueArray?.length > 0){
                             //create an array of values
+                            def values = []
+                            valueArray.each {value -> 
+                                values << value.getString()
+                            }
                         }
 
                     }
 
-                    def user_groups = user.declaredMemberOf()
+                    //direct membership in a group
+                    def declared_user_groups = user.declaredMemberOf()
+                    while(declared_user_groups.hasNext() ) {
+                        declaredMemberOf << declared_user_groups.next().getID()
+                    }
 
-                    while(groups.hasNext()){
-                        groups << groups.next().getID())
+                    //indirect membership in a group
+                    def member_user_groups = user.memberOf()
+                    while(member_user_groups.hasNext()){
+                        memberOf << member_user_groups.next().getID()
                     }
 
                 } catch(Exception e){
@@ -542,10 +599,17 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                 }
             }
 
+            profile["memberOf"] = memberOf
+            profile["declaredMemberOf"] = declaredMemberOf
+
+            //add this server to the list of servers that this token has been seen on
+            //this will help us shortcut finding / creating the profile
+            def servers = [serverName]
+
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
-            def cookieValue = mts.createToken(authInfo.getUser())
+            def cookieValue = mts.createToken(authInfo.getUser(), profile, servers)
             setCookie(request, response, "login-token", cookieValue, 5, null)
-        }   
+        }  
 
         // ensure fresh authentication data (refresh if over half of the session time elapsed)
         //refreshAuthData(request, response, authInfo);
@@ -713,12 +777,80 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             
             MongoTokenStore tokenStore = new MongoTokenStore(sessionTimeout)
 
+            //todo
+            //check if the token was give by this server 
+            //if not try to insert the user with the profile from mongo
+
             return tokenStore.isValid(authData)
 
         }
 
         // no authdata, not valid
         return false;
+    }
+
+    /**
+    * Check to see if the user exits in the jcr for the DefaultLoginModule
+    * If not, create them if they have the necessary profile information associated
+    * with the login-token.
+    */
+    public boolean checkUserExists(final Credentials credentials){
+
+        boolean retval = false
+
+        //check that the user hasn't been seen on this server yet
+        if (credentials instanceof SimpleCredentials) {
+
+            Object data = ((SimpleCredentials) credentials).getAttribute("servers")
+
+            String loginToken = (String)((SimpleCredentials) credentials).getAttribute("login-token")
+            
+            log.info("found servers in credentials")
+            log.info("${data} : "+data.getClass().getCanonicalName())
+            
+            if(data instanceof BasicDBList){
+                def servers = data.toArray()
+                if(!servers.contains(serverName)){
+
+                    //check if the user exists in the jcr
+                    if(repository != null){
+
+                        //TODO:
+                        //check that we have a profile in mongo
+                        //get the profile from mongo
+
+                        //login to the default workspace as the administrator
+                        def jcr_session = repository.loginAdministrative(null)
+                        try{
+                            //get the user manager
+                            def user_manager = jcr_session.getUserManager()
+                            def user = user_manager.getAuthorizable(credentials.getUserID())
+                            if(!user){
+                                //create the user
+                                //create any groups the user should belong to
+
+                            } else {
+                                //check that the user is updated with the latest profile info
+                                //loop through profile information and set values
+                            }
+                        } catch(Exception e){
+                            log.error("Error while finding, updating, or creating user in jcr", e)
+                        } finally {
+                            jcr_session.logout()
+                        }
+                    } else {
+                        //comment
+                        log.error("Unable to create user on server. They will be logged out")
+                    }  
+
+                } else {
+                    //we've seen this user
+                    retval = true
+                }
+            }
+        }
+
+        return retval 
     }
 
     // END ------ LoginModulePlugin support

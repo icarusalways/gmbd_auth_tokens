@@ -134,6 +134,15 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
      * provide a principal based on an existing user defined in the repository.
      */
     public Principal getPrincipal(final Credentials credentials) {
+        //create user if they don't exist
+        log.info("get principal")
+
+        try{
+            authHandler.checkUserExists(credentials)
+        } catch (Exception e){
+            log.error("something happend when checking if the profile exists ", e)
+        }
+
         return null;
     }
 
@@ -151,6 +160,7 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
      * @see CookieAuthenticationHandler#isValid(Credentials)
      */
     public AuthenticationPlugin getAuthentication(Principal principal, Credentials creds) {
+        log.info("LoginModule getAuthentication called. Returning new instance of CustomAuthenticationPlugin")
         return new CustomAuthenticationPlugin(authHandler);
     }
 
