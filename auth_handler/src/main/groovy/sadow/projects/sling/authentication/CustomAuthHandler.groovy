@@ -47,6 +47,8 @@ import com.mongodb.*
 
 import javax.jcr.Credentials;
 import javax.jcr.SimpleCredentials;
+import javax.jcr.Value
+import javax.jcr.ValueFactory
 
 import org.apache.sling.api.auth.Authenticator;
 import org.apache.sling.api.resource.LoginException;
@@ -607,7 +609,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
             def servers = [serverName]
 
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
-            def cookieValue = mts.createToken(authInfo.getUser(), profile, servers)
+            def cookieValue = mts.createToken(authInfo.getUser(), authInfo.getPassword()?.toString(),profile, servers)
             setCookie(request, response, "login-token", cookieValue, 5, null)
         }  
 
@@ -801,15 +803,15 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         //check that the user hasn't been seen on this server yet
         if (credentials instanceof SimpleCredentials) {
 
-            Object data = ((SimpleCredentials) credentials).getAttribute("servers")
+            def servers = ((SimpleCredentials) credentials).getAttribute("servers")
 
             String loginToken = (String)((SimpleCredentials) credentials).getAttribute("login-token")
             
             log.info("found servers in credentials")
-            log.info("${data} : "+data.getClass().getCanonicalName())
+            //log.info("${data} : "+data.getClass().getCanonicalName())
             
-            if(data instanceof BasicDBList){
-                def servers = data.toArray()
+            if(servers instanceof BasicDBList){
+                //def servers = data.toArray()
                 if(!servers.contains(serverName)){
 
                     //check if the user exists in the jcr
@@ -818,29 +820,90 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                         //TODO:
                         //check that we have a profile in mongo
                         //get the profile from mongo
+                        MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
+                        def authData = mts.getAuthData(loginToken)
+                        def user_stored_profile = authData.get("profile")
 
-                        //login to the default workspace as the administrator
-                        def jcr_session = repository.loginAdministrative(null)
-                        try{
-                            //get the user manager
-                            def user_manager = jcr_session.getUserManager()
-                            def user = user_manager.getAuthorizable(credentials.getUserID())
-                            if(!user){
-                                //create the user
-                                //create any groups the user should belong to
+                        log.info("profile : ${user_stored_profile}")
 
-                            } else {
-                                //check that the user is updated with the latest profile info
-                                //loop through profile information and set values
+                        if(user_stored_profile && user_stored_profile.size() > 0){
+                            //login to the default workspace as the administrator
+                            def jcr_session = repository.loginAdministrative(null)
+                            try{
+
+                                //get the user manager
+                                def user_manager = jcr_session.getUserManager()
+
+                                //get the user
+                                def user = user_manager.getAuthorizable(credentials.getUserID())
+
+                                //get the value factory... might be needed
+                                def value_factory = jcr_session.getValueFactory()
+
+                                if(!user){
+                                    //create the user
+                                    user = user_manager.createUser(credentials.getUserID(), authData.get("password").toString())
+
+                                    //update their profile
+                                    user_stored_profile.each{entry -> 
+                                        //if not a group
+                                        if(entry.key != "memberOf" && entry.key != "declaredMemberOf"){
+                                            log.info("${entry}")
+                                            if(entry.value instanceof Collection) {
+                                                log.info("${entry} is a collection")
+                                                Value[] values = []
+                                                entry.value.each { value ->
+                                                    values << value_factory.createValue(value)
+                                                }
+                                                log.info("setting value collection")
+                                                user.setProperty(entry.key, values)
+                                            } else {
+                                                log.info("setting property ${entry.key} with value ${entry.value}")
+                                                user.setProperty(entry.key, value_factory.createValue(entry.value))
+                                            }
+                                            /*if(entry.key.contains("/")){
+                                                
+                                                def pattern = ~/.*\//
+                                                
+                                                def attribute_path = entry.key.find(pattern)
+                                                def attribute_name = entry.key.split("/").last()
+
+                                                user.setProperty(attribute_path, )
+
+                                            } else {
+                                                
+                                            }*/
+                                        } else {
+                                            //create any groups the user should belong to
+                                            log.info("${entry.key} : ${entry.value} : ${entry.value.getClass().getCanonicalName()}")
+                                        }   
+                                    }
+
+                                } else {
+                                    //check that the user is updated with the latest profile info
+                                    log.info("User already exists in repository. Comparing and updating profiles for consistency.")
+
+                                    //loop through profile information and set values
+                                }
+                                //if no exceptions were encountered, assume success
+                                retval = true
+
+                                //add this server to the list of servers that have seen this token
+                                servers << serverName
+                                //update the mongo token to have seen this server
+                                mts.updateToken(loginToken, ["servers":servers])
+
+                            } catch(Exception e){
+                                log.error("Error while finding, updating, or creating user in jcr", e)
+                            } finally {
+                                jcr_session.logout()
                             }
-                        } catch(Exception e){
-                            log.error("Error while finding, updating, or creating user in jcr", e)
-                        } finally {
-                            jcr_session.logout()
+                        } else {
+                            log.info("Unable to create user profile stored in mongo on server ${serverName}. Profile is either missing or empty. User will be logged out.")
                         }
                     } else {
                         //comment
-                        log.error("Unable to create user on server. They will be logged out")
+                        log.error("Unable to create user on server. The repository dependency is null. They will be logged out.")
                     }  
 
                 } else {

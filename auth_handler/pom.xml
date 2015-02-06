@@ -4,7 +4,7 @@
     
     <groupId>sadow.projects</groupId>
     <artifactId>auth_handler</artifactId>
-    <version>1.0.53</version>
+    <version>1.0.59</version>
     <packaging>bundle</packaging>
 
     <name>Custom Authentication Handler</name>
@@ -91,9 +91,9 @@
                     <bundleFileName>${project.build.directory}/${project.build.finalName}.jar</bundleFileName>
                     <!--slingUrl>http://localhost:8081/sling/apps/COMMON/install</slingUrl-->
                     <!--HN TC1-->
-                    <slingUrl>http://localhost:8282/sling/apps/COMMON/install</slingUrl>
+                    <!--slingUrl>http://localhost:8282/sling/apps/COMMON/install</slingUrl-->
                     <!--HN TC2-->
-                    <!--slingUrl>http://localhost:8181/sling/apps/COMMON/install</slingUrl-->
+                    <slingUrl>http://localhost:8181/sling/apps/COMMON/install</slingUrl>
                     <user>admin</user>
                     <password>admin</password>
                 </configuration>

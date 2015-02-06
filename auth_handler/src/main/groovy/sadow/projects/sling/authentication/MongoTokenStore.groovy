@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory
 import com.mongodb.*
 
 import java.util.UUID
+import java.util.Map
 
 public class MongoTokenStore {
 	
@@ -20,7 +21,7 @@ public class MongoTokenStore {
 		this.sessionTimeout = sessionTimeout
 	}
 
-	def createToken(username, profile, servers){
+	def createToken(username, password, profile, servers){
 
 		def cookieValue = UUID.randomUUID().toString()
 
@@ -38,7 +39,7 @@ public class MongoTokenStore {
 
 		log.info("${new_expiration_date}")
 
-		def verify = auth_tokens.save(new BasicDBObject(["username":username, "cookie":cookieValue, "expiration_date" : new_expiration_date, "profile":profile, "servers":servers]))
+		def verify = auth_tokens.save(new BasicDBObject(["username":username, "password":password, "cookie":cookieValue, "expiration_date" : new_expiration_date, "profile":profile, "servers":servers]))
 
 		log.info("created a new token? ${verify}")
 
@@ -130,5 +131,24 @@ public class MongoTokenStore {
 		log.info("result of clear cookie operation : ${result}")
 
 		mongoClient.close();
+	}
+
+	void updateToken(value, Map updates){
+
+		log.info("modifying ${value} with updates ${updates}")
+
+		MongoClient mongoClient = new MongoClient( "localhost" , 27017 );
+		
+		DB db = mongoClient.getDB("test")
+
+		DBCollection auth_tokens = db.getCollection("authentication_tokens");
+
+		//def auth_token = auth_tokens.findOne(new BasicDBObject(["cookie":value]));
+		auth_tokens.findAndModify(new BasicDBObject(["cookie":value]), new BasicDBObject(updates))
+
+		mongoClient.close();
+		/*if(auth_token){
+			auth_tokens.putAll(value)
+		}*/
 	}
 }
