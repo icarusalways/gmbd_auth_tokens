@@ -133,9 +133,9 @@ public class MongoTokenStore {
 		mongoClient.close();
 	}
 
-	void updateToken(value, Map updates){
+	void updateToken(value, Map doc_updates){
 
-		log.info("modifying ${value} with updates ${updates}")
+		log.info("modifying cookie : ${value} with updates ${doc_updates}")
 
 		MongoClient mongoClient = new MongoClient( "localhost" , 27017 );
 		
@@ -143,12 +143,13 @@ public class MongoTokenStore {
 
 		DBCollection auth_tokens = db.getCollection("authentication_tokens");
 
-		//def auth_token = auth_tokens.findOne(new BasicDBObject(["cookie":value]));
-		auth_tokens.findAndModify(new BasicDBObject(["cookie":value]), new BasicDBObject(updates))
+		def query = new BasicDBObject(["cookie":value])
+
+		//using single quotes so $set doesn't get replace (groovy runtime)
+		def updates = new BasicDBObject(['$set' : doc_updates])
+		//returns the document as it was before modification (useless in this scenario)
+		auth_tokens.findAndModify(query, updates)
 
 		mongoClient.close();
-		/*if(auth_token){
-			auth_tokens.putAll(value)
-		}*/
 	}
 }

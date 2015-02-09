@@ -547,69 +547,80 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                         }
                     }
 
-                    def profile_property_names = user.getPropertyNames("profile")
+                    try{
+                        def profile_property_names = user.getPropertyNames("profile")
 
-                    while(profile_property_names.hasNext()){
-                        
-                        def name = profile_property_names.next()
-                        def valueArray = user.getProperty("profile/"+name)
+                        while(profile_property_names.hasNext()){
+                            
+                            def name = profile_property_names.next()
+                            def valueArray = user.getProperty("profile/"+name)
 
-                        if(valueArray?.length == 1){
-                            
-                            profile["profile/"+name] = valueArray[0]?.getString()
-                            println(name + " : "+user.getProperty("profile/"+name)[0].getString())
-                            
-                            /*if(crypto){
-                                if(crypto.isProtected(valueArray[0]?.getString())){
-                                    profile[name] = crypto.unprotect(valueArray[0]?.getString())
-                                    //println(name + " : "+crypto.unprotect(user.getProperty("profile/"+name)[0].getString()))
+                            if(valueArray?.length == 1){
+                                
+                                profile["profile/"+name] = valueArray[0]?.getString()
+                                println(name + " : "+user.getProperty("profile/"+name)[0].getString())
+                                
+                                /*if(crypto){
+                                    if(crypto.isProtected(valueArray[0]?.getString())){
+                                        profile[name] = crypto.unprotect(valueArray[0]?.getString())
+                                        //println(name + " : "+crypto.unprotect(user.getProperty("profile/"+name)[0].getString()))
+                                    } else {
+                                        profile[name] = valueArray[0]?.getString()
+                                        println(name + " : "+user.getProperty("profile/"+name)[0].getString())
+                                    }
                                 } else {
-                                    profile[name] = valueArray[0]?.getString()
-                                    println(name + " : "+user.getProperty("profile/"+name)[0].getString())
-                                }
-                            } else {
-                                //use the value directly?
-                            }*/
+                                    //use the value directly?
+                                }*/
 
-                        } else if(valueArray?.length > 0){
-                            //create an array of values
-                            def values = []
-                            valueArray.each {value -> 
-                                values << value.getString()
+                            } else if(valueArray?.length > 0){
+                                //create an array of values
+                                def values = []
+                                valueArray.each {value -> 
+                                    values << value.getString()
+                                }
                             }
                         }
-
+                    } catch(Exception pnf){
+                        log.error("Exception while tyring to collect profile of member ", pnf)
                     }
 
+                    log.info("looking for direct group membership.")
                     //direct membership in a group
                     def declared_user_groups = user.declaredMemberOf()
                     while(declared_user_groups.hasNext() ) {
-                        declaredMemberOf << declared_user_groups.next().getID()
+                        //log.info("adding ${declared_user_groups.next().getID()}")
+                        def groupName = declared_user_groups.next().getID()
+                        log.info("${groupName}")
+                        declaredMemberOf << groupName
                     }
 
-                    //indirect membership in a group
+                    //all membership including indirect (group in group)
                     def member_user_groups = user.memberOf()
                     while(member_user_groups.hasNext()){
                         memberOf << member_user_groups.next().getID()
                     }
 
                 } catch(Exception e){
-                    log.error("Unable to query jcr for user ${authInfo.getUser()} ")
+                    log.error("Unable to query jcr for user ${authInfo.getUser()} ", e)
                 } finally{
                     //must logout of the session
                     jcr_session.logout();    
                 }
             }
 
+            println("declaredMemberOf : ${declaredMemberOf}")
+
             profile["memberOf"] = memberOf
             profile["declaredMemberOf"] = declaredMemberOf
+
+            log.info("profile after filling ${profile}")
 
             //add this server to the list of servers that this token has been seen on
             //this will help us shortcut finding / creating the profile
             def servers = [serverName]
 
             MongoTokenStore mts = new MongoTokenStore(sessionTimeout)
-            def cookieValue = mts.createToken(authInfo.getUser(), authInfo.getPassword()?.toString(),profile, servers)
+            def cookieValue = mts.createToken(authInfo.getUser(), authInfo.getPassword()?.toString(), profile, servers)
             setCookie(request, response, "login-token", cookieValue, 5, null)
         }  
 
@@ -861,22 +872,36 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                                                 log.info("setting property ${entry.key} with value ${entry.value}")
                                                 user.setProperty(entry.key, value_factory.createValue(entry.value))
                                             }
-                                            /*if(entry.key.contains("/")){
-                                                
-                                                def pattern = ~/.*\//
-                                                
-                                                def attribute_path = entry.key.find(pattern)
-                                                def attribute_name = entry.key.split("/").last()
-
-                                                user.setProperty(attribute_path, )
-
-                                            } else {
-                                                
-                                            }*/
                                         } else {
                                             //create any groups the user should belong to
                                             log.info("${entry.key} : ${entry.value} : ${entry.value.getClass().getCanonicalName()}")
-                                        }   
+                                            //all groups the user is directly a member of
+                                            if(entry.key == "declaredMemberOf"){
+                                                entry.value.each{ groupName ->
+                                                    //try catch group creation exceptions
+                                                    //if the user isn't added to a group it shouldn't be considered a catastrophic event 
+                                                    //stoping the entire process of inserting the user's profile
+                                                    try{
+                                                        def group = user_manager.getAuthorizable("${groupName}")
+                                                        if(!group){
+                                                            //create the group
+                                                            group = user_manager.createGroup(groupName)
+                                                        }
+                                                        if(group){
+                                                            //add the user to the group
+                                                            if(!group.isMember(user)){
+                                                                group.addMember(user)
+                                                            }
+                                                        }
+                                                    } catch(Exception group_creation_exception){
+                                                        log.error("Unable to create group ${groupName} or add member.", group_creation_exception)
+                                                    }
+                                                }
+
+                                            } else if (entry.key == "memberOf"){
+                                                //all groups that the member is directly and indirectly a memberOf
+                                            }
+                                        }
                                     }
 
                                 } else {
@@ -884,7 +909,55 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                                     log.info("User already exists in repository. Comparing and updating profiles for consistency.")
 
                                     //loop through profile information and set values
+                                    user_stored_profile.each{ entry ->
+                                        //work group membership differently
+                                        if(entry.key != "memberOf" && entry.key != "declaredMemberOf"){
+                                            try{
+                                                if(user.hasProperty(entry.key)){
+                                                    //check if the values are different
+                                                    def vals = user.getProperty(entry.key)
+                                                    if(vals){
+                                                        //check if it is multiple
+                                                        if(vals.size() == 1){
+                                                            if(entry.value != vals[0]?.getString()){
+                                                                user.setProperty(entry.key, value_factory.createValue(entry.value))
+                                                            }
+                                                        } else {
+                                                            if(entry.value instanceof Collection){
+                                                                
+                                                                //both are collections
+                                                                def diff = (entry.value as Set) + (vals as Set)
+                                                                def temp = vals as Set
+                                                                temp.retainAll(entry.value)
+                                                                diff.removeAll(temp)
+
+                                                                if(diff.size() > 0){
+                                                                    //add anything that wasn't already there
+                                                                    vals.addAll(diff)
+                                                                    user.setProperty(entry.key, vals)
+                                                                }
+                                                             } else {
+                                                                //was a collection and now is a single value
+                                                                user.setProperty(entry.key, value_factory.createValue(entry.value))
+                                                            }
+                                                        }
+                                                    } else {
+                                                        log.error("user property is null in jcr. Setting to value in profile")
+                                                        user.setProperty(entry.key, value_factory.createValue(entry.value))
+                                                    }
+                                                } else {
+                                                    //set the 'new' property
+                                                    user.setProperty(entry.key, value_factory.createValue(entry.value))
+                                                }
+                                            } catch (RepositoryException re){
+                                                log.error("Unable to set ${entry.key} : ${entry.value} for ${user.getID()}.")
+                                            }
+                                        }
+                                    }
+
+                                    //TODO: REMOVE ANY properties that aren't part of the stored profile??.
                                 }
+
                                 //if no exceptions were encountered, assume success
                                 retval = true
 
@@ -907,6 +980,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
                     }  
 
                 } else {
+                    log.info("server has already seen this user.")
                     //we've seen this user
                     retval = true
                 }

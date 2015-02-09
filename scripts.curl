@@ -20,13 +20,26 @@ curl -v -X DELETE -u admin:admin http://localhost:8282/sling/apps/sadow/auth/htm
 #curl -X POST -u admin:admin http://localhost:8081/apps/sadow/projects
 #curl -X POST -u admin:admin http://localhost:8081/apps/sadow/projects/authentication_form
 
+#update form
 #curl -u admin:admin -T sadow_login.gsp http://localhost:8081/apps/sadow/projects/GET.gsp
+
+#get user
+curl http://localhost:8282/sling/system/userManager/user/msadow.tidy.1.json
 
 #create user
 curl -u admin:admin -F:name=msadow -Fpwd=password -FpwdConfirm=password -Ffirstname=Matthew -Flastname=Sadowski http://localhost:8081/sling/system/userManager/user.create.json
 
 #delete user
 curl -X POST -u admin:admin http://localhost:8181/sling/system/userManager/user/msadow.delete.json
+
+#creat group
+curl -X POST -d ":name=awesomeness" -d aprop=aval http://localhost:8181/sling/system/userManager/group.create.html
+
+#add user to group
+curl -X POST -u admin:admin -d ":member=msadow" http://localhost:8181/sling/system/userManager/group/awesomeness.update.json
+
+#get group
+curl http://localhost:8282/sling/system/userManager/group/awesomeness.tidy.1.json
 
 #default sling form authentication
 curl -v -X POST -d j_username=msadow -d j_password=password http://localhost:8282/sling/j_security_check
