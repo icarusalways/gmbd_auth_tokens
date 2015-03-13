@@ -416,7 +416,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
         AuthenticationInfo info = null;
 
         // only consider login form parameters if this is a POST request
-        // to the j_security_check URL
+        // to the configured URL suffix
         if ("POST" == request.getMethod() && request.getRequestURI().endsWith(REQUEST_URL_SUFFIX)) {
 
             String user = request.getParameter("j_username");
@@ -489,7 +489,7 @@ public class CustomAuthHandler extends DefaultAuthenticationFeedbackHandler impl
     }
 
     /**
-     * Called after successful login with the given authentication info. This
+     * Called after successful login into the jcr with the given authentication info. This
      * implementation ensures the authentication data is set in either the
      * cookie or the HTTP session with the correct security tokens.
      * <p>

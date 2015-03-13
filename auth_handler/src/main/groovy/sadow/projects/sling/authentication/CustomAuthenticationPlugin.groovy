@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory
 
 /**
  * Necessary since groovy doesn't support anonymous innner classes
- *
  */
 public class CustomAuthenticationPlugin implements AuthenticationPlugin {
 
@@ -23,7 +22,17 @@ public class CustomAuthenticationPlugin implements AuthenticationPlugin {
 	}
 	
 	boolean authenticate(javax.jcr.Credentials credentials){
-		log.info("calling CustomAuthenticationPlugin authenticate")
-		return authHandler.isValid(credentials);
+		boolean authenticated = false;
+		try{
+
+			//TODO: Extract information (type of user)
+			//Authenticate them against the database?
+
+			log.info("calling CustomAuthenticationPlugin authenticate")
+			authenticated = authHandler.isValid(credentials);
+		} catch (Exception e){
+			log.error("");
+		}
+		return authenticated
 	}
 }

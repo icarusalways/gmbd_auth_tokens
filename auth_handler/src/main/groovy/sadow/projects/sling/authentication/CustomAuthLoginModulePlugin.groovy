@@ -111,16 +111,9 @@ final class CustomAuthLoginModulePlugin implements LoginModulePlugin {
             retval = false   
         }
         log.info("canHandle creds ${retval}")
+
+        //returning false will let the default LoginModule run and log the user into the jcr
         return retval;
-        /*if (credentials instanceof SimpleCredentials) {
-            if(credentials.getAttribute("login-token") != null && credentials.getAttribute("login-token") instanceof String){
-                return true;
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        }*/
     }
 
     /**
